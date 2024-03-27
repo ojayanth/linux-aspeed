@@ -57,6 +57,28 @@ struct dw_i3c_master {
 
 	/* platform-specific data */
 	const struct dw_i3c_platform_ops *platform_ops;
+
+	/* target mode data */
+	struct {
+		struct completion comp;
+		struct completion rdata_comp;
+
+		/* Used for handling private write */
+		struct {
+			void *buf;
+			u16 max_len;
+		} rx;
+	} target;
+
+	struct {
+		unsigned long core_rate;
+		unsigned long core_period;
+		u32 i3c_od_scl_low;
+		u32 i3c_od_scl_high;
+		u32 i3c_pp_scl_low;
+		u32 i3c_pp_scl_high;
+	} timing;
+	struct work_struct hj_work;
 };
 
 struct dw_i3c_platform_ops {
@@ -76,6 +98,18 @@ struct dw_i3c_platform_ops {
 	 */
 	void (*set_dat_ibi)(struct dw_i3c_master *i3c,
 			    struct i3c_dev_desc *dev, bool enable, u32 *reg);
+
+	/* Enter the software force mode by isolating the SCL and SDA pins */
+	void (*enter_sw_mode)(struct dw_i3c_master *i3c);
+
+	/* Exit the software force mode */
+	void (*exit_sw_mode)(struct dw_i3c_master *i3c);
+	void (*toggle_scl_in)(struct dw_i3c_master *i3c, int count);
+	void (*gen_internal_stop)(struct dw_i3c_master *i3c);
+	void (*gen_target_reset_pattern)(struct dw_i3c_master *i3c);
+
+	/* For target mode, pending read notification */
+	void (*set_ibi_mdb)(struct dw_i3c_master *i3c, u8 mdb);
 };
 
 extern int dw_i3c_common_probe(struct dw_i3c_master *master,

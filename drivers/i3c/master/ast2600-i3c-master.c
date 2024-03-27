@@ -10,6 +10,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
+#include <linux/bitfield.h>
 
 #include "dw-i3c-master.h"
 
@@ -33,10 +34,23 @@
 #define AST2600_I3CG_REG1_SA_EN			BIT(15)
 #define AST2600_I3CG_REG1_INST_ID_MASK		GENMASK(19, 16)
 #define AST2600_I3CG_REG1_INST_ID(x)		(((x) << 16) & AST2600_I3CG_REG1_INST_ID_MASK)
+#define SCL_SW_MODE_OE				BIT(20)
+#define SCL_OUT_SW_MODE_VAL			BIT(21)
+#define SCL_IN_SW_MODE_VAL			BIT(23)
+#define SDA_SW_MODE_OE				BIT(24)
+#define SDA_OUT_SW_MODE_VAL			BIT(25)
+#define SDA_IN_SW_MODE_VAL			BIT(27)
+#define SCL_IN_SW_MODE_EN			BIT(28)
+#define SDA_IN_SW_MODE_EN			BIT(29)
+#define SCL_OUT_SW_MODE_EN			BIT(30)
+#define SDA_OUT_SW_MODE_EN			BIT(31)
 
 #define AST2600_DEFAULT_SDA_PULLUP_OHMS		2000
 
 #define DEV_ADDR_TABLE_IBI_PEC			BIT(11)
+
+#define DEVICE_CTRL				0x0
+#define DEV_CTRL_SLAVE_MDB			GENMASK(23, 16)
 
 struct ast2600_i3c {
 	struct dw_i3c_master dw;
@@ -117,9 +131,116 @@ static void ast2600_i3c_set_dat_ibi(struct dw_i3c_master *i3c,
 	}
 }
 
+static void ast2600_i3c_enter_sw_mode(struct dw_i3c_master *dw)
+{
+	struct ast2600_i3c *i3c = to_ast2600_i3c(dw);
+
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SCL_IN_SW_MODE_VAL | SDA_IN_SW_MODE_VAL,
+			  SCL_IN_SW_MODE_VAL | SDA_IN_SW_MODE_VAL);
+
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SCL_IN_SW_MODE_EN | SDA_IN_SW_MODE_EN,
+			  SCL_IN_SW_MODE_EN | SDA_IN_SW_MODE_EN);
+}
+
+static void ast2600_i3c_exit_sw_mode(struct dw_i3c_master *dw)
+{
+	struct ast2600_i3c *i3c = to_ast2600_i3c(dw);
+
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SCL_IN_SW_MODE_EN | SDA_IN_SW_MODE_EN, 0);
+}
+
+static void ast2600_i3c_toggle_scl_in(struct dw_i3c_master *dw, int count)
+{
+	struct ast2600_i3c *i3c = to_ast2600_i3c(dw);
+
+	for (; count; count--) {
+		regmap_write_bits(i3c->global_regs,
+				  AST2600_I3CG_REG1(i3c->global_idx),
+				  SCL_IN_SW_MODE_VAL, 0);
+		regmap_write_bits(i3c->global_regs,
+				  AST2600_I3CG_REG1(i3c->global_idx),
+				  SCL_IN_SW_MODE_VAL, SCL_IN_SW_MODE_VAL);
+	}
+}
+
+static void ast2600_i3c_gen_internal_stop(struct dw_i3c_master *dw)
+{
+	struct ast2600_i3c *i3c = to_ast2600_i3c(dw);
+
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SCL_IN_SW_MODE_VAL, 0);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_IN_SW_MODE_VAL, 0);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SCL_IN_SW_MODE_VAL, SCL_IN_SW_MODE_VAL);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_IN_SW_MODE_VAL, SDA_IN_SW_MODE_VAL);
+}
+
+static void ast2600_i3c_gen_target_reset_pattern(struct dw_i3c_master *dw)
+{
+	struct ast2600_i3c *i3c = to_ast2600_i3c(dw);
+	int i;
+
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_OUT_SW_MODE_VAL | SCL_OUT_SW_MODE_VAL,
+			  SDA_OUT_SW_MODE_VAL | SCL_OUT_SW_MODE_VAL);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_SW_MODE_OE | SCL_SW_MODE_OE,
+			  SDA_SW_MODE_OE | SCL_SW_MODE_OE);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_OUT_SW_MODE_EN | SCL_OUT_SW_MODE_EN,
+			  SDA_OUT_SW_MODE_EN | SCL_OUT_SW_MODE_EN);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_IN_SW_MODE_VAL | SCL_IN_SW_MODE_VAL,
+			  SDA_IN_SW_MODE_VAL | SCL_IN_SW_MODE_VAL);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_IN_SW_MODE_EN | SCL_IN_SW_MODE_EN,
+			  SDA_IN_SW_MODE_EN | SCL_IN_SW_MODE_EN);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SCL_OUT_SW_MODE_VAL, 0);
+	for (i = 0; i < 7; i++) {
+		regmap_write_bits(i3c->global_regs,
+				  AST2600_I3CG_REG1(i3c->global_idx),
+				  SDA_OUT_SW_MODE_VAL, 0);
+		regmap_write_bits(i3c->global_regs,
+				  AST2600_I3CG_REG1(i3c->global_idx),
+				  SDA_OUT_SW_MODE_VAL, SDA_OUT_SW_MODE_VAL);
+	}
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SCL_OUT_SW_MODE_VAL, SCL_OUT_SW_MODE_VAL);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_OUT_SW_MODE_VAL, 0);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_OUT_SW_MODE_VAL, SDA_OUT_SW_MODE_VAL);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_OUT_SW_MODE_EN | SCL_OUT_SW_MODE_EN, 0);
+	regmap_write_bits(i3c->global_regs, AST2600_I3CG_REG1(i3c->global_idx),
+			  SDA_IN_SW_MODE_EN | SCL_IN_SW_MODE_EN, 0);
+}
+
+static void ast2600_i3c_set_ibi_mdb(struct dw_i3c_master *dw, u8 mdb)
+{
+	u32 reg;
+
+	reg = readl(dw->regs + DEVICE_CTRL);
+	reg &= ~DEV_CTRL_SLAVE_MDB;
+	reg |= FIELD_PREP(DEV_CTRL_SLAVE_MDB, mdb);
+	writel(reg, dw->regs + DEVICE_CTRL);
+}
+
 static const struct dw_i3c_platform_ops ast2600_i3c_ops = {
 	.init = ast2600_i3c_init,
 	.set_dat_ibi = ast2600_i3c_set_dat_ibi,
+	.enter_sw_mode = ast2600_i3c_enter_sw_mode,
+	.exit_sw_mode = ast2600_i3c_exit_sw_mode,
+	.toggle_scl_in = ast2600_i3c_toggle_scl_in,
+	.gen_internal_stop = ast2600_i3c_gen_internal_stop,
+	.gen_target_reset_pattern = ast2600_i3c_gen_target_reset_pattern,
+	.set_ibi_mdb = ast2600_i3c_set_ibi_mdb,
 };
 
 static int ast2600_i3c_probe(struct platform_device *pdev)
@@ -157,6 +278,7 @@ static int ast2600_i3c_probe(struct platform_device *pdev)
 
 	i3c->dw.platform_ops = &ast2600_i3c_ops;
 	i3c->dw.ibi_capable = true;
+	i3c->dw.base.pec_supported = true;
 	return dw_i3c_common_probe(&i3c->dw, pdev);
 }
 
