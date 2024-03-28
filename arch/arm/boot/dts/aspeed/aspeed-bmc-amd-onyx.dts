@@ -13,7 +13,7 @@
 
 	aliases {
 		serial0 = &uart1;
-                serial4 = &uart5;
+		serial4 = &uart5;
 		ethernet0 = &mac3;
 		ethernet1 = &mac2;
 	};
@@ -40,7 +40,7 @@
 		reg = <0x80000000 0x80000000>;
 	};
 
-        reserved-memory {
+	reserved-memory {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges;
@@ -51,7 +51,19 @@
 			compatible = "shared-dma-pool";
 			reusable;
 		};
-        };
+	};
+
+	iio-hwmon-adc121c {
+		compatible = "iio-hwmon";
+		oemname0 = "FPGA_VDD_CORE";
+		oemname1 = "FPGA_VDD_18";
+		oemname2 = "FPGA_VDD_33";
+		oemname3 = "LOM_VDD_33";
+		oemname4 = "LOM_VDD_12";
+		oemname5 = "VDD_12_DUAL";
+		io-channels = <&adc2 0>, <&adc3 0>,
+					<&adc4 0>, <&adc5 0>;
+	};
 };
 
 &mdio0 {
@@ -75,6 +87,7 @@
 	status = "okay";
 	phy-mode = "rgmii";
 	phy-handle = <&ethphy0>;
+
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_rgmii4_default>;
 };
@@ -89,6 +102,34 @@
 	};
 };
 
+&spi1 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi1_default &pinctrl_qspi1_default>;
+	compatible = "aspeed,ast2600-spi";
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		label = "pnor";
+		status = "okay";
+	};
+
+};
+
+&spi2 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi2_default &pinctrl_qspi2_default>;
+	compatible = "aspeed,ast2600-spi";
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		label = "pnor";
+		status = "okay";
+	};
+
+};
+
 // eSPI Virtual UART - 0x3F8
 &vuart1 {
 	status = "okay";
@@ -96,6 +137,7 @@
 
 //Host console
 &uart1 {
+	//Host console
 	status = "okay";
 };
 
@@ -459,6 +501,37 @@
 			};
 		};
 
+		i2c@6 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <6>;
+
+			adc2: fpga_vdd_33@52 {
+				compatible = "ti,adc121c";
+				reg = <0x52>;
+				#io-channel-cells = <1>;
+				label = "fpga_vdd_33";
+			};
+			adc3: lom_vdd_33@53 {
+				compatible = "ti,adc121c";
+				reg = <0x53>;
+				#io-channel-cells = <1>;
+				label = "lom_vdd_33";
+			};
+			adc4: lom_vdd_12@54 {
+				compatible = "ti,adc121c";
+				reg = <0x54>;
+				#io-channel-cells = <1>;
+				label = "lom_vdd_12";
+			};
+			adc5: vdd_12_dual@55 {
+				compatible = "ti,adc121c";
+				reg = <0x55>;
+				#io-channel-cells = <1>;
+				label = "vdd_12_dual";
+			};
+		};
+
 		i2c@7 {
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -534,4 +607,8 @@
 &kcs3 {
 	status = "okay";
 	aspeed,lpc-io-reg = <0xCA2>;
+};
+
+&uart_routing {
+	status = "okay";
 };
